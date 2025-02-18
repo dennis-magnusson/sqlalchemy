@@ -1,5 +1,5 @@
 # util/langhelpers.py
-# Copyright (C) 2005-2024 the SQLAlchemy authors and contributors
+# Copyright (C) 2005-2025 the SQLAlchemy authors and contributors
 # <see AUTHORS file>
 #
 # This module is part of SQLAlchemy and is released under
@@ -66,15 +66,11 @@ if compat.py310:
 else:
 
     def get_annotations(obj: Any) -> Mapping[str, Any]:
-        # it's been observed that cls.__annotations__ can be non present.
-        # it's not clear what causes this, running under tox py38 it
-        # happens, running straight pytest it doesnt
-
         # https://docs.python.org/3/howto/annotations.html#annotations-howto
         if isinstance(obj, type):
             ann = obj.__dict__.get("__annotations__", None)
         else:
-            ann = getattr(obj, "__annotations__", None)
+            ann = obj.__annotations__
 
         if ann is None:
             return _collections.EMPTY_DICT
@@ -660,7 +656,9 @@ def format_argspec_init(method, grouped=True):
     """format_argspec_plus with considerations for typical __init__ methods
 
     Wraps format_argspec_plus with error handling strategies for typical
-    __init__ cases::
+    __init__ cases:
+
+    .. sourcecode:: text
 
       object.__init__ -> (self)
       other unreflectable (usually C) -> (self, *args, **kwargs)
@@ -715,7 +713,9 @@ def create_proxy_methods(
 def getargspec_init(method):
     """inspect.getargspec with considerations for typical __init__ methods
 
-    Wraps inspect.getargspec with error handling for typical __init__ cases::
+    Wraps inspect.getargspec with error handling for typical __init__ cases:
+
+    .. sourcecode:: text
 
       object.__init__ -> (self)
       other unreflectable (usually C) -> (self, *args, **kwargs)
@@ -1589,9 +1589,9 @@ class hybridmethod(Generic[_T]):
 class symbol(int):
     """A constant symbol.
 
-    >>> symbol('foo') is symbol('foo')
+    >>> symbol("foo") is symbol("foo")
     True
-    >>> symbol('foo')
+    >>> symbol("foo")
     <symbol 'foo>
 
     A slight refinement of the MAGICCOOKIE=object() pattern.  The primary

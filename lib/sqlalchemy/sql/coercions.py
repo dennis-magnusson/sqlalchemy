@@ -1,5 +1,5 @@
 # sql/coercions.py
-# Copyright (C) 2005-2024 the SQLAlchemy authors and contributors
+# Copyright (C) 2005-2025 the SQLAlchemy authors and contributors
 # <see AUTHORS file>
 #
 # This module is part of SQLAlchemy and is released under
@@ -57,9 +57,9 @@ if typing.TYPE_CHECKING:
     from .elements import ClauseElement
     from .elements import ColumnClause
     from .elements import ColumnElement
-    from .elements import DQLDMLClauseElement
     from .elements import NamedColumn
     from .elements import SQLCoreOperations
+    from .elements import TextClause
     from .schema import Column
     from .selectable import _ColumnsClauseElement
     from .selectable import _JoinTargetProtocol
@@ -190,7 +190,7 @@ def expect(
     role: Type[roles.DDLReferredColumnRole],
     element: Any,
     **kw: Any,
-) -> Column[Any]: ...
+) -> Union[Column[Any], str]: ...
 
 
 @overload
@@ -206,7 +206,7 @@ def expect(
     role: Type[roles.StatementOptionRole],
     element: Any,
     **kw: Any,
-) -> DQLDMLClauseElement: ...
+) -> Union[ColumnElement[Any], TextClause]: ...
 
 
 @overload
@@ -859,8 +859,6 @@ class InElementImpl(RoleImpl):
 
                     else:
                         non_literal_expressions[o] = o
-                elif o is None:
-                    non_literal_expressions[o] = elements.Null()
 
             if non_literal_expressions:
                 return elements.ClauseList(
@@ -1273,25 +1271,12 @@ class FromClauseImpl(_SelectIsNotFrom, _NoTextCoercion, RoleImpl):
         argname: Optional[str] = None,
         *,
         explicit_subquery: bool = False,
-        allow_select: bool = True,
         **kw: Any,
     ) -> Any:
-        if resolved._is_select_base:
-            if explicit_subquery:
-                return resolved.subquery()
-            elif allow_select:
-                util.warn_deprecated(
-                    "Implicit coercion of SELECT and textual SELECT "
-                    "constructs into FROM clauses is deprecated; please call "
-                    ".subquery() on any Core select or ORM Query object in "
-                    "order to produce a subquery object.",
-                    version="1.4",
-                )
-                return resolved._implicit_subquery
-        elif resolved._is_text_clause:
-            return resolved
-        else:
-            self._raise_for_expected(element, argname, resolved)
+        if resolved._is_select_base and explicit_subquery:
+            return resolved.subquery()
+
+        self._raise_for_expected(element, argname, resolved)
 
     def _post_coercion(self, element, *, deannotate=False, **kw):
         if deannotate:
@@ -1300,32 +1285,7 @@ class FromClauseImpl(_SelectIsNotFrom, _NoTextCoercion, RoleImpl):
             return element
 
 
-class StrictFromClauseImpl(FromClauseImpl):
-    __slots__ = ()
-
-    def _implicit_coercions(
-        self,
-        element: Any,
-        resolved: Any,
-        argname: Optional[str] = None,
-        *,
-        allow_select: bool = False,
-        **kw: Any,
-    ) -> Any:
-        if resolved._is_select_base and allow_select:
-            util.warn_deprecated(
-                "Implicit coercion of SELECT and textual SELECT constructs "
-                "into FROM clauses is deprecated; please call .subquery() "
-                "on any Core select or ORM Query object in order to produce a "
-                "subquery object.",
-                version="1.4",
-            )
-            return resolved._implicit_subquery
-        else:
-            self._raise_for_expected(element, argname, resolved)
-
-
-class AnonymizedFromClauseImpl(StrictFromClauseImpl):
+class AnonymizedFromClauseImpl(FromClauseImpl):
     __slots__ = ()
 
     def _post_coercion(self, element, *, flat=False, name=None, **kw):

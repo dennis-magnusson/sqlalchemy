@@ -1,5 +1,5 @@
 # orm/_typing.py
-# Copyright (C) 2022-2024 the SQLAlchemy authors and contributors
+# Copyright (C) 2022-2025 the SQLAlchemy authors and contributors
 # <see AUTHORS file>
 #
 # This module is part of SQLAlchemy and is released under
@@ -30,9 +30,9 @@ from ..sql.elements import ColumnElement
 from ..util.typing import TypeGuard
 
 if TYPE_CHECKING:
-    from .attributes import AttributeImpl
-    from .attributes import CollectionAttributeImpl
-    from .attributes import HasCollectionAdapter
+    from .attributes import _AttributeImpl
+    from .attributes import _CollectionAttributeImpl
+    from .attributes import _HasCollectionAdapter
     from .attributes import QueryableAttribute
     from .base import PassiveFlag
     from .decl_api import registry as _registry_type
@@ -159,12 +159,12 @@ if TYPE_CHECKING:
     ) -> TypeGuard[RelationshipProperty[Any]]: ...
 
     def is_collection_impl(
-        impl: AttributeImpl,
-    ) -> TypeGuard[CollectionAttributeImpl]: ...
+        impl: _AttributeImpl,
+    ) -> TypeGuard[_CollectionAttributeImpl]: ...
 
     def is_has_collection_adapter(
-        impl: AttributeImpl,
-    ) -> TypeGuard[HasCollectionAdapter]: ...
+        impl: _AttributeImpl,
+    ) -> TypeGuard[_HasCollectionAdapter]: ...
 
 else:
     insp_is_mapper_property = operator.attrgetter("is_property")

@@ -78,6 +78,7 @@ class UpdateDeleteTest(fixtures.MappedTest):
             metadata,
             Column("id", Integer, primary_key=True),
             Column("user_id", ForeignKey("users.id")),
+            Column("email_address", String(50)),
         )
 
         m = MetaData()
@@ -117,6 +118,24 @@ class UpdateDeleteTest(fixtures.MappedTest):
                 dict(id=4, name="jane", age_int=37),
             ],
         )
+
+    @testing.fixture
+    def addresses_data(
+        self,
+    ):
+        addresses = self.tables.addresses
+
+        with testing.db.begin() as connection:
+            connection.execute(
+                addresses.insert(),
+                [
+                    dict(id=1, user_id=1, email_address="jo1"),
+                    dict(id=2, user_id=1, email_address="jo2"),
+                    dict(id=3, user_id=2, email_address="ja1"),
+                    dict(id=4, user_id=3, email_address="ji1"),
+                    dict(id=5, user_id=4, email_address="jan1"),
+                ],
+            )
 
     @classmethod
     def setup_mappers(cls):
@@ -1319,6 +1338,52 @@ class UpdateDeleteTest(fixtures.MappedTest):
             CompiledSQL(
                 "UPDATE users SET age_int=(users.age_int - %(age_int_1)s) "
                 "WHERE users.age_int > %(age_int_2)s RETURNING users.id",
+                [{"age_int_1": 10, "age_int_2": 29}],
+                dialect="postgresql",
+            ),
+        )
+
+    @testing.requires.update_from_returning
+    # can't use evaluate because it can't match the col->col in the WHERE
+    @testing.combinations("fetch", "auto", argnames="synchronize_session")
+    def test_update_from_multi_returning(
+        self, synchronize_session, addresses_data
+    ):
+        """test #12327"""
+        User = self.classes.User
+        Address = self.classes.Address
+
+        sess = fixture_session()
+
+        john, jack, jill, jane = sess.query(User).order_by(User.id).all()
+
+        with self.sql_execution_asserter() as asserter:
+            stmt = (
+                update(User)
+                .where(User.id == Address.user_id)
+                .filter(User.age > 29)
+                .values({"age": User.age - 10})
+                .returning(
+                    User.id, Address.email_address, func.char_length(User.name)
+                )
+                .execution_options(synchronize_session=synchronize_session)
+            )
+
+            rows = sess.execute(stmt).all()
+            eq_(set(rows), {(2, "ja1", 4), (4, "jan1", 4)})
+
+            # these are simple values, these are now evaluated even with
+            # the "fetch" strategy, new in 1.4, so there is no expiry
+            eq_([john.age, jack.age, jill.age, jane.age], [25, 37, 29, 27])
+
+        asserter.assert_(
+            CompiledSQL(
+                "UPDATE users SET age_int=(users.age_int - %(age_int_1)s) "
+                "FROM addresses "
+                "WHERE users.id = addresses.user_id AND "
+                "users.age_int > %(age_int_2)s "
+                "RETURNING users.id, addresses.email_address, "
+                "char_length(users.name) AS char_length_1",
                 [{"age_int_1": 10, "age_int_2": 29}],
                 dialect="postgresql",
             ),
@@ -2586,7 +2651,7 @@ class UpdateDeleteFromTest(fixtures.MappedTest):
         )
 
 
-class ExpressionUpdateTest(fixtures.MappedTest):
+class ExpressionUpdateDeleteTest(fixtures.MappedTest):
     @classmethod
     def define_tables(cls, metadata):
         Table(
@@ -2651,6 +2716,27 @@ class ExpressionUpdateTest(fixtures.MappedTest):
         update_stmt = m1.mock_calls[0][1][0]
 
         eq_(update_stmt.dialect_kwargs, update_args)
+
+    def test_delete_args(self):
+        Data = self.classes.Data
+        session = fixture_session()
+        delete_args = {"mysql_limit": 1}
+
+        m1 = testing.mock.Mock()
+
+        @event.listens_for(session, "after_bulk_delete")
+        def do_orm_execute(bulk_ud):
+            delete_stmt = (
+                bulk_ud.result.context.compiled.compile_state.statement
+            )
+            m1(delete_stmt)
+
+        q = session.query(Data)
+        q.delete(delete_args=delete_args)
+
+        delete_stmt = m1.mock_calls[0][1][0]
+
+        eq_(delete_stmt.dialect_kwargs, delete_args)
 
 
 class InheritTest(fixtures.DeclarativeMappedTest):

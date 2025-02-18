@@ -8,6 +8,7 @@ from sqlalchemy import and_
 from sqlalchemy import between
 from sqlalchemy import bindparam
 from sqlalchemy import exc
+from sqlalchemy import Float
 from sqlalchemy import Integer
 from sqlalchemy import join
 from sqlalchemy import LargeBinary
@@ -739,16 +740,6 @@ class _CustomComparatorTests:
         c1 = Column("foo", self._add_override_factory())
         self._assert_add_override(c1)
 
-    def test_column_proxy(self):
-        t = Table("t", MetaData(), Column("foo", self._add_override_factory()))
-        with testing.expect_deprecated(
-            "The SelectBase.c and SelectBase.columns attributes "
-            "are deprecated"
-        ):
-            proxied = t.select().c.foo
-        self._assert_add_override(proxied)
-        self._assert_and_override(proxied)
-
     def test_subquery_proxy(self):
         t = Table("t", MetaData(), Column("foo", self._add_override_factory()))
         proxied = t.select().subquery().c.foo
@@ -1115,7 +1106,7 @@ class JSONIndexOpTest(fixtures.TestBase, testing.AssertsCompiledSQL):
         return testing.combinations(
             ("integer", Integer),
             ("boolean", Boolean),
-            ("float", Numeric),
+            ("float", Float),
             ("string", String),
         )(fn)
 
@@ -2330,8 +2321,23 @@ class InTest(fixtures.TestBase, testing.AssertsCompiledSQL):
         )
 
     def test_in_28(self):
+        """revised to test #12314"""
         self.assert_compile(
-            self.table1.c.myid.in_([None]), "mytable.myid IN (NULL)"
+            self.table1.c.myid.in_([None]),
+            "mytable.myid IN (__[POSTCOMPILE_myid_1])",
+        )
+
+    @testing.combinations(
+        [1, 2, None, 3],
+        [None, None, None],
+        [None, 2, 3, 3],
+    )
+    def test_in_null_combinations(self, expr):
+        """test #12314"""
+
+        self.assert_compile(
+            self.table1.c.myid.in_(expr),
+            "mytable.myid IN (__[POSTCOMPILE_myid_1])",
         )
 
     @testing.combinations(True, False)

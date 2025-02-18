@@ -1,5 +1,5 @@
 # sql/roles.py
-# Copyright (C) 2005-2024 the SQLAlchemy authors and contributors
+# Copyright (C) 2005-2025 the SQLAlchemy authors and contributors
 # <see AUTHORS file>
 #
 # This module is part of SQLAlchemy and is released under
@@ -215,12 +215,7 @@ class FromClauseRole(ColumnsClauseRole, JoinTargetRole):
     named_with_column: bool
 
 
-class StrictFromClauseRole(FromClauseRole):
-    __slots__ = ()
-    # does not allow text() or select() objects
-
-
-class AnonymizedFromClauseRole(StrictFromClauseRole):
+class AnonymizedFromClauseRole(FromClauseRole):
     __slots__ = ()
 
     if TYPE_CHECKING:

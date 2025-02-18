@@ -1,5 +1,5 @@
 # engine/events.py
-# Copyright (C) 2005-2024 the SQLAlchemy authors and contributors
+# Copyright (C) 2005-2025 the SQLAlchemy authors and contributors
 # <see AUTHORS file>
 #
 # This module is part of SQLAlchemy and is released under
@@ -56,19 +56,24 @@ class ConnectionEvents(event.Events[ConnectionEventsTarget]):
 
         from sqlalchemy import event, create_engine
 
-        def before_cursor_execute(conn, cursor, statement, parameters, context,
-                                                        executemany):
+
+        def before_cursor_execute(
+            conn, cursor, statement, parameters, context, executemany
+        ):
             log.info("Received statement: %s", statement)
 
-        engine = create_engine('postgresql+psycopg2://scott:tiger@localhost/test')
+
+        engine = create_engine("postgresql+psycopg2://scott:tiger@localhost/test")
         event.listen(engine, "before_cursor_execute", before_cursor_execute)
 
     or with a specific :class:`_engine.Connection`::
 
         with engine.begin() as conn:
-            @event.listens_for(conn, 'before_cursor_execute')
-            def before_cursor_execute(conn, cursor, statement, parameters,
-                                            context, executemany):
+
+            @event.listens_for(conn, "before_cursor_execute")
+            def before_cursor_execute(
+                conn, cursor, statement, parameters, context, executemany
+            ):
                 log.info("Received statement: %s", statement)
 
     When the methods are called with a `statement` parameter, such as in
@@ -86,9 +91,11 @@ class ConnectionEvents(event.Events[ConnectionEventsTarget]):
         from sqlalchemy.engine import Engine
         from sqlalchemy import event
 
+
         @event.listens_for(Engine, "before_cursor_execute", retval=True)
-        def comment_sql_calls(conn, cursor, statement, parameters,
-                                            context, executemany):
+        def comment_sql_calls(
+            conn, cursor, statement, parameters, context, executemany
+        ):
             statement = statement + " -- some comment"
             return statement, parameters
 
@@ -318,8 +325,9 @@ class ConnectionEvents(event.Events[ConnectionEventsTarget]):
         returned as a two-tuple in this case::
 
             @event.listens_for(Engine, "before_cursor_execute", retval=True)
-            def before_cursor_execute(conn, cursor, statement,
-                            parameters, context, executemany):
+            def before_cursor_execute(
+                conn, cursor, statement, parameters, context, executemany
+            ):
                 # do something with statement, parameters
                 return statement, parameters
 
@@ -768,9 +776,9 @@ class DialectEvents(event.Events[Dialect]):
 
             @event.listens_for(Engine, "handle_error")
             def handle_exception(context):
-                if isinstance(context.original_exception,
-                    psycopg2.OperationalError) and \
-                    "failed" in str(context.original_exception):
+                if isinstance(
+                    context.original_exception, psycopg2.OperationalError
+                ) and "failed" in str(context.original_exception):
                     raise MySpecialException("failed operation")
 
         .. warning::  Because the
@@ -793,10 +801,13 @@ class DialectEvents(event.Events[Dialect]):
 
             @event.listens_for(Engine, "handle_error", retval=True)
             def handle_exception(context):
-                if context.chained_exception is not None and \
-                    "special" in context.chained_exception.message:
-                    return MySpecialException("failed",
-                        cause=context.chained_exception)
+                if (
+                    context.chained_exception is not None
+                    and "special" in context.chained_exception.message
+                ):
+                    return MySpecialException(
+                        "failed", cause=context.chained_exception
+                    )
 
         Handlers that return ``None`` may be used within the chain; when
         a handler returns ``None``, the previous exception instance,
@@ -838,7 +849,8 @@ class DialectEvents(event.Events[Dialect]):
 
             e = create_engine("postgresql+psycopg2://user@host/dbname")
 
-            @event.listens_for(e, 'do_connect')
+
+            @event.listens_for(e, "do_connect")
             def receive_do_connect(dialect, conn_rec, cargs, cparams):
                 cparams["password"] = "some_password"
 
@@ -847,7 +859,8 @@ class DialectEvents(event.Events[Dialect]):
 
             e = create_engine("postgresql+psycopg2://user@host/dbname")
 
-            @event.listens_for(e, 'do_connect')
+
+            @event.listens_for(e, "do_connect")
             def receive_do_connect(dialect, conn_rec, cargs, cparams):
                 return psycopg2.connect(*cargs, **cparams)
 
@@ -930,7 +943,8 @@ class DialectEvents(event.Events[Dialect]):
 
         The setinputsizes hook overall is only used for dialects which include
         the flag ``use_setinputsizes=True``.  Dialects which use this
-        include cx_Oracle, pg8000, asyncpg, and pyodbc dialects.
+        include python-oracledb, cx_Oracle, pg8000, asyncpg, and pyodbc
+        dialects.
 
         .. note::
 

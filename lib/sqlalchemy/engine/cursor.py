@@ -1,5 +1,5 @@
 # engine/cursor.py
-# Copyright (C) 2005-2024 the SQLAlchemy authors and contributors
+# Copyright (C) 2005-2025 the SQLAlchemy authors and contributors
 # <see AUTHORS file>
 #
 # This module is part of SQLAlchemy and is released under
@@ -49,7 +49,6 @@ from ..sql.compiler import RM_OBJECTS
 from ..sql.compiler import RM_RENDERED_NAME
 from ..sql.compiler import RM_TYPE
 from ..sql.type_api import TypeEngine
-from ..util import compat
 from ..util.typing import Literal
 from ..util.typing import Self
 from ..util.typing import TupleAny
@@ -325,16 +324,14 @@ class CursorResultMetaData(ResultMetaData):
 
         assert not self._tuplefilter
         return self._make_new_metadata(
-            keymap=compat.dict_union(
-                self._keymap,
-                {
-                    new: keymap_by_position[idx]
-                    for idx, new in enumerate(
-                        invoked_statement._all_selected_columns
-                    )
-                    if idx in keymap_by_position
-                },
-            ),
+            keymap=self._keymap
+            | {
+                new: keymap_by_position[idx]
+                for idx, new in enumerate(
+                    invoked_statement._all_selected_columns
+                )
+                if idx in keymap_by_position
+            },
             unpickled=self._unpickled,
             processors=self._processors,
             tuplefilter=None,
@@ -1255,7 +1252,7 @@ class BufferedRowCursorFetchStrategy(CursorFetchStrategy):
 
             result = conn.execution_options(
                 stream_results=True, max_row_buffer=50
-                ).execute(text("select * from table"))
+            ).execute(text("select * from table"))
 
     .. versionadded:: 1.4 ``max_row_buffer`` may now exceed 1000 rows.
 
@@ -1861,11 +1858,9 @@ class CursorResult(Result[Unpack[_Ts]]):
 
             r1 = connection.execute(
                 users.insert().returning(
-                    users.c.user_name,
-                    users.c.user_id,
-                    sort_by_parameter_order=True
+                    users.c.user_name, users.c.user_id, sort_by_parameter_order=True
                 ),
-                user_values
+                user_values,
             )
 
             r2 = connection.execute(
@@ -1873,19 +1868,16 @@ class CursorResult(Result[Unpack[_Ts]]):
                     addresses.c.address_id,
                     addresses.c.address,
                     addresses.c.user_id,
-                    sort_by_parameter_order=True
+                    sort_by_parameter_order=True,
                 ),
-                address_values
+                address_values,
             )
 
             rows = r1.splice_horizontally(r2).all()
-            assert (
-                rows ==
-                [
-                    ("john", 1, 1, "foo@bar.com", 1),
-                    ("jack", 2, 2, "bar@bat.com", 2),
-                ]
-            )
+            assert rows == [
+                ("john", 1, 1, "foo@bar.com", 1),
+                ("jack", 2, 2, "bar@bat.com", 2),
+            ]
 
         .. versionadded:: 2.0
 
@@ -1894,7 +1886,7 @@ class CursorResult(Result[Unpack[_Ts]]):
             :meth:`.CursorResult.splice_vertically`
 
 
-        """
+        """  # noqa: E501
 
         clone = self._generate()
         total_rows = [

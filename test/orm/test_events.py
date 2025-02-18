@@ -782,7 +782,8 @@ class ORMExecuteTest(RemoveORMEventsGlobally, _fixtures.FixtureTest):
         if from_stmt:
             stmt = select(User).from_statement(stmt.returning(User))
 
-        sess.execute(stmt)
+        result = sess.execute(stmt)
+        result.close()
 
         eq_(
             canary.mock_calls,
@@ -2580,8 +2581,9 @@ class SessionEventsTest(RemoveORMEventsGlobally, _fixtures.FixtureTest):
         u2 = User(name="u1", id=1)
         sess.add(u2)
 
-        with expect_raises(sa.exc.IntegrityError), expect_warnings(
-            "New instance"
+        with (
+            expect_raises(sa.exc.IntegrityError),
+            expect_warnings("New instance"),
         ):
             sess.commit()
 
@@ -2636,8 +2638,9 @@ class SessionEventsTest(RemoveORMEventsGlobally, _fixtures.FixtureTest):
 
         u2 = User(name="u1", id=1)
         sess.add(u2)
-        with expect_raises(sa.exc.IntegrityError), expect_warnings(
-            "New instance"
+        with (
+            expect_raises(sa.exc.IntegrityError),
+            expect_warnings("New instance"),
         ):
             sess.commit()
 

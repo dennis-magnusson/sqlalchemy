@@ -301,7 +301,9 @@ class DefaultRequirements(SuiteRequirements):
     @property
     def binary_literals(self):
         """target backend supports simple binary literals, e.g. an
-        expression like::
+        expression like:
+
+        .. sourcecode:: sql
 
             SELECT CAST('foo' AS BINARY)
 
@@ -492,6 +494,13 @@ class DefaultRequirements(SuiteRequirements):
         )
 
     @property
+    def update_from_returning(self):
+        """Target must support UPDATE..FROM syntax where RETURNING can
+        return columns from the non-primary FROM clause"""
+
+        return self.update_returning + self.update_from + skip_if("sqlite")
+
+    @property
     def update_from_using_alias(self):
         """Target must support UPDATE..FROM syntax against an alias"""
 
@@ -522,7 +531,9 @@ class DefaultRequirements(SuiteRequirements):
         present in a subquery in the WHERE clause.
 
         This is an ANSI-standard syntax that apparently MySQL can't handle,
-        such as::
+        such as:
+
+        .. sourcecode:: sql
 
             UPDATE documents SET flag=1 WHERE documents.title IN
                 (SELECT max(documents.title) AS title
@@ -1472,9 +1483,7 @@ class DefaultRequirements(SuiteRequirements):
 
             expr = decimal.Decimal("15.7563")
 
-            value = e.scalar(
-                select(literal(expr))
-            )
+            value = e.scalar(select(literal(expr)))
 
             assert value == expr
 
@@ -1487,10 +1496,6 @@ class DefaultRequirements(SuiteRequirements):
     @property
     def fetch_null_from_numeric(self):
         return skip_if(("mssql+pyodbc", None, None, "crashes due to bug #351"))
-
-    @property
-    def float_is_numeric(self):
-        return exclusions.fails_if(["oracle"])
 
     @property
     def duplicate_key_raises_integrity_error(self):
@@ -1577,6 +1582,16 @@ class DefaultRequirements(SuiteRequirements):
     @property
     def postgresql_jsonb(self):
         return only_on("postgresql >= 9.4")
+
+    @property
+    def postgresql_working_nullable_domains(self):
+        # see https://www.postgresql.org/message-id/flat/a90f53c4-56f3-4b07-aefc-49afdc67dba6%40app.fastmail.com  # noqa: E501
+        return skip_if(
+            lambda config: (17, 0)
+            < config.db.dialect.server_version_info
+            < (17, 3),
+            "reflection of nullable domains broken on PG 17.0-17.2",
+        )
 
     @property
     def native_hstore(self):

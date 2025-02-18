@@ -1,5 +1,5 @@
 # orm/session.py
-# Copyright (C) 2005-2024 the SQLAlchemy authors and contributors
+# Copyright (C) 2005-2025 the SQLAlchemy authors and contributors
 # <see AUTHORS file>
 #
 # This module is part of SQLAlchemy and is released under
@@ -58,8 +58,8 @@ from .base import object_mapper
 from .base import object_state
 from .base import PassiveFlag
 from .base import state_str
+from .context import _ORMCompileState
 from .context import FromStatement
-from .context import ORMCompileState
 from .identity import IdentityMap
 from .query import Query
 from .state import InstanceState
@@ -89,6 +89,7 @@ from ..sql.base import CompileState
 from ..sql.schema import Table
 from ..sql.selectable import ForUpdateArg
 from ..sql.selectable import LABEL_STYLE_TABLENAME_PLUS_COL
+from ..util import deprecated_params
 from ..util import IdentitySet
 from ..util.typing import Literal
 from ..util.typing import TupleAny
@@ -349,7 +350,7 @@ class ORMExecuteState(util.MemoizedSlots):
 
     """
 
-    _compile_state_cls: Optional[Type[ORMCompileState]]
+    _compile_state_cls: Optional[Type[_ORMCompileState]]
     _starting_event_idx: int
     _events_todo: List[Any]
     _update_execution_options: Optional[_ExecuteOptions]
@@ -361,7 +362,7 @@ class ORMExecuteState(util.MemoizedSlots):
         parameters: Optional[_CoreAnyExecuteParams],
         execution_options: _ExecuteOptions,
         bind_arguments: _BindArguments,
-        compile_state_cls: Optional[Type[ORMCompileState]],
+        compile_state_cls: Optional[Type[_ORMCompileState]],
         events_todo: List[_InstanceLevelDispatch[Session]],
     ):
         """Construct a new :class:`_orm.ORMExecuteState`.
@@ -655,8 +656,8 @@ class ORMExecuteState(util.MemoizedSlots):
         self,
     ) -> Optional[
         Union[
-            context.ORMCompileState.default_compile_options,
-            Type[context.ORMCompileState.default_compile_options],
+            context._ORMCompileState.default_compile_options,
+            Type[context._ORMCompileState.default_compile_options],
         ]
     ]:
         if not self.is_select:
@@ -667,7 +668,7 @@ class ORMExecuteState(util.MemoizedSlots):
             return None
 
         if opts is not None and opts.isinstance(
-            context.ORMCompileState.default_compile_options
+            context._ORMCompileState.default_compile_options
         ):
             return opts  # type: ignore
         else:
@@ -782,8 +783,8 @@ class ORMExecuteState(util.MemoizedSlots):
     def update_delete_options(
         self,
     ) -> Union[
-        bulk_persistence.BulkUDCompileState.default_update_options,
-        Type[bulk_persistence.BulkUDCompileState.default_update_options],
+        bulk_persistence._BulkUDCompileState.default_update_options,
+        Type[bulk_persistence._BulkUDCompileState.default_update_options],
     ]:
         """Return the update_delete_options that will be used for this
         execution."""
@@ -794,11 +795,11 @@ class ORMExecuteState(util.MemoizedSlots):
                 "statement so there are no update options."
             )
         uo: Union[
-            bulk_persistence.BulkUDCompileState.default_update_options,
-            Type[bulk_persistence.BulkUDCompileState.default_update_options],
+            bulk_persistence._BulkUDCompileState.default_update_options,
+            Type[bulk_persistence._BulkUDCompileState.default_update_options],
         ] = self.execution_options.get(
             "_sa_orm_update_options",
-            bulk_persistence.BulkUDCompileState.default_update_options,
+            bulk_persistence._BulkUDCompileState.default_update_options,
         )
         return uo
 
@@ -1571,12 +1572,16 @@ class Session(_SessionClassMethods, EventTarget):
            operation.    The complete heuristics for resolution are
            described at :meth:`.Session.get_bind`.  Usage looks like::
 
-            Session = sessionmaker(binds={
-                SomeMappedClass: create_engine('postgresql+psycopg2://engine1'),
-                SomeDeclarativeBase: create_engine('postgresql+psycopg2://engine2'),
-                some_mapper: create_engine('postgresql+psycopg2://engine3'),
-                some_table: create_engine('postgresql+psycopg2://engine4'),
-                })
+            Session = sessionmaker(
+                binds={
+                    SomeMappedClass: create_engine("postgresql+psycopg2://engine1"),
+                    SomeDeclarativeBase: create_engine(
+                        "postgresql+psycopg2://engine2"
+                    ),
+                    some_mapper: create_engine("postgresql+psycopg2://engine3"),
+                    some_table: create_engine("postgresql+psycopg2://engine4"),
+                }
+            )
 
            .. seealso::
 
@@ -1747,7 +1752,7 @@ class Session(_SessionClassMethods, EventTarget):
             raise sa_exc.ArgumentError(
                 "autocommit=True is no longer supported"
             )
-        self.identity_map = identity.WeakInstanceDict()
+        self.identity_map = identity._WeakInstanceDict()
 
         if not future:
             raise sa_exc.ArgumentError(
@@ -1771,7 +1776,7 @@ class Session(_SessionClassMethods, EventTarget):
 
         # the idea is that at some point NO_ARG will warn that in the future
         # the default will switch to close_resets_only=False.
-        if close_resets_only or close_resets_only is _NoArg.NO_ARG:
+        if close_resets_only in (True, _NoArg.NO_ARG):
             self._close_state = _SessionCloseState.CLOSE_IS_RESET
         else:
             self._close_state = _SessionCloseState.ACTIVE
@@ -2160,7 +2165,7 @@ class Session(_SessionClassMethods, EventTarget):
             )
             if TYPE_CHECKING:
                 assert isinstance(
-                    compile_state_cls, context.AbstractORMCompileState
+                    compile_state_cls, context._AbstractORMCompileState
                 )
         else:
             compile_state_cls = None
@@ -2322,9 +2327,8 @@ class Session(_SessionClassMethods, EventTarget):
         E.g.::
 
             from sqlalchemy import select
-            result = session.execute(
-                select(User).where(User.id == 5)
-            )
+
+            result = session.execute(select(User).where(User.id == 5))
 
         The API contract of :meth:`_orm.Session.execute` is similar to that
         of :meth:`_engine.Connection.execute`, the :term:`2.0 style` version
@@ -2602,7 +2606,7 @@ class Session(_SessionClassMethods, EventTarget):
 
         all_states = self.identity_map.all_states() + list(self._new)
         self.identity_map._kill()
-        self.identity_map = identity.WeakInstanceDict()
+        self.identity_map = identity._WeakInstanceDict()
         self._new = {}
         self._deleted = {}
 
@@ -2984,7 +2988,7 @@ class Session(_SessionClassMethods, EventTarget):
 
         e.g.::
 
-            obj = session._identity_lookup(inspect(SomeClass), (1, ))
+            obj = session._identity_lookup(inspect(SomeClass), (1,))
 
         :param mapper: mapper in use
         :param primary_key_identity: the primary key we are searching for, as
@@ -3055,7 +3059,8 @@ class Session(_SessionClassMethods, EventTarget):
     @util.langhelpers.tag_method_for_warnings(
         "This warning originated from the Session 'autoflush' process, "
         "which was invoked automatically in response to a user-initiated "
-        "operation.",
+        "operation. Consider using ``no_autoflush`` context manager if this "
+        "warning happended while initializing objects.",
         sa_exc.SAWarning,
     )
     def _autoflush(self) -> None:
@@ -3175,7 +3180,7 @@ class Session(_SessionClassMethods, EventTarget):
 
         stmt: Select[Unpack[TupleAny]] = sql.select(object_mapper(instance))
         if (
-            loading.load_on_ident(
+            loading._load_on_ident(
                 self,
                 stmt,
                 state.key,
@@ -3455,7 +3460,7 @@ class Session(_SessionClassMethods, EventTarget):
             if persistent_to_deleted is not None:
                 persistent_to_deleted(self, state)
 
-    def add(self, instance: object, _warn: bool = True) -> None:
+    def add(self, instance: object, *, _warn: bool = True) -> None:
         """Place an object into this :class:`_orm.Session`.
 
         Objects that are in the :term:`transient` state when passed to the
@@ -3540,16 +3545,30 @@ class Session(_SessionClassMethods, EventTarget):
 
             :ref:`session_deleting` - at :ref:`session_basics`
 
+            :meth:`.Session.delete_all` - multiple instance version
+
         """
         if self._warn_on_events:
             self._flush_warning("Session.delete()")
 
-        try:
-            state = attributes.instance_state(instance)
-        except exc.NO_STATE as err:
-            raise exc.UnmappedInstanceError(instance) from err
+        self._delete_impl(object_state(instance), instance, head=True)
 
-        self._delete_impl(state, instance, head=True)
+    def delete_all(self, instances: Iterable[object]) -> None:
+        """Calls :meth:`.Session.delete` on multiple instances.
+
+        .. seealso::
+
+            :meth:`.Session.delete` - main documentation on delete
+
+        .. versionadded: 2.1
+
+        """
+
+        if self._warn_on_events:
+            self._flush_warning("Session.delete_all()")
+
+        for instance in instances:
+            self._delete_impl(object_state(instance), instance, head=True)
 
     def _delete_impl(
         self, state: InstanceState[Any], obj: object, head: bool
@@ -3611,10 +3630,7 @@ class Session(_SessionClassMethods, EventTarget):
 
             some_object = session.get(VersionedFoo, (5, 10))
 
-            some_object = session.get(
-                VersionedFoo,
-                {"id": 5, "version_id": 10}
-            )
+            some_object = session.get(VersionedFoo, {"id": 5, "version_id": 10})
 
         .. versionadded:: 1.4 Added :meth:`_orm.Session.get`, which is moved
            from the now legacy :meth:`_orm.Query.get` method.
@@ -3703,11 +3719,11 @@ class Session(_SessionClassMethods, EventTarget):
 
         :return: The object instance, or ``None``.
 
-        """
+        """  # noqa: E501
         return self._get_impl(
             entity,
             ident,
-            loading.load_on_pk_identity,
+            loading._load_on_pk_identity,
             options=options,
             populate_existing=populate_existing,
             with_for_update=with_for_update,
@@ -3954,32 +3970,62 @@ class Session(_SessionClassMethods, EventTarget):
             :func:`.make_transient_to_detached` - provides for an alternative
             means of "merging" a single object into the :class:`.Session`
 
+            :meth:`.Session.merge_all` - multiple instance version
+
         """
 
         if self._warn_on_events:
             self._flush_warning("Session.merge()")
 
-        _recursive: Dict[InstanceState[Any], object] = {}
-        _resolve_conflict_map: Dict[_IdentityKeyType[Any], object] = {}
+        if load:
+            # flush current contents if we expect to load data
+            self._autoflush()
+
+        with self.no_autoflush:
+            return self._merge(
+                object_state(instance),
+                attributes.instance_dict(instance),
+                load=load,
+                options=options,
+                _recursive={},
+                _resolve_conflict_map={},
+            )
+
+    def merge_all(
+        self,
+        instances: Iterable[_O],
+        *,
+        load: bool = True,
+        options: Optional[Sequence[ORMOption]] = None,
+    ) -> Sequence[_O]:
+        """Calls :meth:`.Session.merge` on multiple instances.
+
+        .. seealso::
+
+            :meth:`.Session.merge` - main documentation on merge
+
+        .. versionadded: 2.1
+
+        """
+
+        if self._warn_on_events:
+            self._flush_warning("Session.merge_all()")
 
         if load:
             # flush current contents if we expect to load data
             self._autoflush()
 
-        object_mapper(instance)  # verify mapped
-        autoflush = self.autoflush
-        try:
-            self.autoflush = False
-            return self._merge(
-                attributes.instance_state(instance),
+        return [
+            self._merge(
+                object_state(instance),
                 attributes.instance_dict(instance),
                 load=load,
                 options=options,
-                _recursive=_recursive,
-                _resolve_conflict_map=_resolve_conflict_map,
+                _recursive={},
+                _resolve_conflict_map={},
             )
-        finally:
-            self.autoflush = autoflush
+            for instance in instances
+        ]
 
     def _merge(
         self,
@@ -4354,6 +4400,8 @@ class Session(_SessionClassMethods, EventTarget):
           particular objects may need to be operated upon before the
           full flush() occurs.  It is not intended for general use.
 
+          .. deprecated:: 2.1
+
         """
 
         if self._flushing:
@@ -4382,6 +4430,14 @@ class Session(_SessionClassMethods, EventTarget):
             and not self._new
         )
 
+    # have this here since it otherwise causes issues with the proxy
+    # method generation
+    @deprecated_params(
+        objects=(
+            "2.1",
+            "The `objects` parameter of `Session.flush` is deprecated",
+        )
+    )
     def _flush(self, objects: Optional[Sequence[object]] = None) -> None:
         dirty = self._dirty_states
         if not dirty and not self._deleted and not self._new:
@@ -4956,7 +5012,7 @@ class sessionmaker(_SessionClassMethods, Generic[_S]):
 
         # an Engine, which the Session will use for connection
         # resources
-        engine = create_engine('postgresql+psycopg2://scott:tiger@localhost/')
+        engine = create_engine("postgresql+psycopg2://scott:tiger@localhost/")
 
         Session = sessionmaker(engine)
 
@@ -5009,7 +5065,7 @@ class sessionmaker(_SessionClassMethods, Generic[_S]):
 
         with engine.connect() as connection:
             with Session(bind=connection) as session:
-                # work with session
+                ...  # work with session
 
     The class also includes a method :meth:`_orm.sessionmaker.configure`, which
     can be used to specify additional keyword arguments to the factory, which
@@ -5024,7 +5080,7 @@ class sessionmaker(_SessionClassMethods, Generic[_S]):
 
         # ... later, when an engine URL is read from a configuration
         # file or other events allow the engine to be created
-        engine = create_engine('sqlite:///foo.db')
+        engine = create_engine("sqlite:///foo.db")
         Session.configure(bind=engine)
 
         sess = Session()
@@ -5162,7 +5218,7 @@ class sessionmaker(_SessionClassMethods, Generic[_S]):
 
             Session = sessionmaker()
 
-            Session.configure(bind=create_engine('sqlite://'))
+            Session.configure(bind=create_engine("sqlite://"))
         """
         self.kw.update(new_kw)
 

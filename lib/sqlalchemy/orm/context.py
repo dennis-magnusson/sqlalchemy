@@ -1,5 +1,5 @@
 # orm/context.py
-# Copyright (C) 2005-2024 the SQLAlchemy authors and contributors
+# Copyright (C) 2005-2025 the SQLAlchemy authors and contributors
 # <see AUTHORS file>
 #
 # This module is part of SQLAlchemy and is released under
@@ -75,7 +75,7 @@ from ..util.typing import Unpack
 if TYPE_CHECKING:
     from ._typing import _InternalEntityType
     from ._typing import OrmExecuteOptionsParameter
-    from .loading import PostLoad
+    from .loading import _PostLoad
     from .mapper import Mapper
     from .query import Query
     from .session import _BindArguments
@@ -132,8 +132,8 @@ class QueryContext:
     )
 
     runid: int
-    post_load_paths: Dict[PathRegistry, PostLoad]
-    compile_state: ORMCompileState
+    post_load_paths: Dict[PathRegistry, _PostLoad]
+    compile_state: _ORMCompileState
 
     class default_load_options(Options):
         _only_return_tuples = False
@@ -155,10 +155,12 @@ class QueryContext:
         statement: Union[
             Select[Unpack[TupleAny]],
             FromStatement[Unpack[TupleAny]],
+            UpdateBase,
         ],
         user_passed_query: Union[
             Select[Unpack[TupleAny]],
             FromStatement[Unpack[TupleAny]],
+            UpdateBase,
         ],
         params: _CoreSingleExecuteParams,
         session: Session,
@@ -226,7 +228,7 @@ _orm_load_exec_options = util.immutabledict(
 )
 
 
-class AbstractORMCompileState(CompileState):
+class _AbstractORMCompileState(CompileState):
     is_dml_returning = False
 
     def _init_global_attributes(
@@ -274,7 +276,7 @@ class AbstractORMCompileState(CompileState):
         statement: Union[Select, FromStatement],
         compiler: Optional[SQLCompiler],
         **kw: Any,
-    ) -> AbstractORMCompileState:
+    ) -> _AbstractORMCompileState:
         """Create a context for a statement given a :class:`.Compiler`.
 
         This method is always invoked in the context of SQLCompiler.process().
@@ -334,7 +336,7 @@ class AbstractORMCompileState(CompileState):
         raise NotImplementedError()
 
 
-class AutoflushOnlyORMCompileState(AbstractORMCompileState):
+class _AutoflushOnlyORMCompileState(_AbstractORMCompileState):
     """ORM compile state that is a passthrough, except for autoflush."""
 
     @classmethod
@@ -379,7 +381,7 @@ class AutoflushOnlyORMCompileState(AbstractORMCompileState):
         return result
 
 
-class ORMCompileState(AbstractORMCompileState):
+class _ORMCompileState(_AbstractORMCompileState):
     class default_compile_options(CacheableOptions):
         _cache_key_traversal = [
             ("_use_legacy_query_style", InternalTraversal.dp_boolean),
@@ -420,7 +422,9 @@ class ORMCompileState(AbstractORMCompileState):
     attributes: Dict[Any, Any]
     global_attributes: Dict[Any, Any]
 
-    statement: Union[Select[Unpack[TupleAny]], FromStatement[Unpack[TupleAny]]]
+    statement: Union[
+        Select[Unpack[TupleAny]], FromStatement[Unpack[TupleAny]], UpdateBase
+    ]
     select_statement: Union[
         Select[Unpack[TupleAny]], FromStatement[Unpack[TupleAny]]
     ]
@@ -453,7 +457,7 @@ class ORMCompileState(AbstractORMCompileState):
             statement: Union[Select, FromStatement],
             compiler: Optional[SQLCompiler],
             **kw: Any,
-        ) -> ORMCompileState: ...
+        ) -> _ORMCompileState: ...
 
     def _append_dedupe_col_collection(self, obj, col_collection):
         dedupe = self.dedupe_columns
@@ -663,8 +667,8 @@ class ORMCompileState(AbstractORMCompileState):
         )
 
 
-class DMLReturningColFilter:
-    """an adapter used for the DML RETURNING case.
+class _DMLReturningColFilter:
+    """a base for an adapter used for the DML RETURNING cases
 
     Has a subset of the interface used by
     :class:`.ORMAdapter` and is used for :class:`._QueryEntity`
@@ -699,6 +703,21 @@ class DMLReturningColFilter:
             return None
 
     def adapt_check_present(self, col):
+        raise NotImplementedError()
+
+
+class _DMLBulkInsertReturningColFilter(_DMLReturningColFilter):
+    """an adapter used for the DML RETURNING case specifically
+    for ORM bulk insert (or any hypothetical DML that is splitting out a class
+    hierarchy among multiple DML statements....ORM bulk insert is the only
+    example right now)
+
+    its main job is to limit the columns in a RETURNING to only a specific
+    mapped table in a hierarchy.
+
+    """
+
+    def adapt_check_present(self, col):
         mapper = self.mapper
         prop = mapper._columntoproperty.get(col, None)
         if prop is None:
@@ -706,8 +725,32 @@ class DMLReturningColFilter:
         return mapper.local_table.c.corresponding_column(col)
 
 
+class _DMLUpdateDeleteReturningColFilter(_DMLReturningColFilter):
+    """an adapter used for the DML RETURNING case specifically
+    for ORM enabled UPDATE/DELETE
+
+    its main job is to limit the columns in a RETURNING to include
+    only direct persisted columns from the immediate selectable, not
+    expressions like column_property(), or to also allow columns from other
+    mappers for the UPDATE..FROM use case.
+
+    """
+
+    def adapt_check_present(self, col):
+        mapper = self.mapper
+        prop = mapper._columntoproperty.get(col, None)
+        if prop is not None:
+            # if the col is from the immediate mapper, only return a persisted
+            # column, not any kind of column_property expression
+            return mapper.persist_selectable.c.corresponding_column(col)
+
+        # if the col is from some other mapper, just return it, assume the
+        # user knows what they are doing
+        return col
+
+
 @sql.base.CompileState.plugin_for("orm", "orm_from_statement")
-class ORMFromStatementCompileState(ORMCompileState):
+class _ORMFromStatementCompileState(_ORMCompileState):
     _from_obj_alias = None
     _has_mapper_entities = False
 
@@ -729,7 +772,7 @@ class ORMFromStatementCompileState(ORMCompileState):
         statement_container: Union[Select, FromStatement],
         compiler: Optional[SQLCompiler],
         **kw: Any,
-    ) -> ORMFromStatementCompileState:
+    ) -> _ORMFromStatementCompileState:
         assert isinstance(statement_container, FromStatement)
 
         if compiler is not None and compiler.stack:
@@ -860,14 +903,24 @@ class ORMFromStatementCompileState(ORMCompileState):
         return None
 
     def setup_dml_returning_compile_state(self, dml_mapper):
-        """used by BulkORMInsert (and Update / Delete?) to set up a handler
+        """used by BulkORMInsert, Update, Delete to set up a handler
         for RETURNING to return ORM objects and expressions
 
         """
         target_mapper = self.statement._propagate_attrs.get(
             "plugin_subject", None
         )
-        adapter = DMLReturningColFilter(target_mapper, dml_mapper)
+
+        if self.statement.is_insert:
+            adapter = _DMLBulkInsertReturningColFilter(
+                target_mapper, dml_mapper
+            )
+        elif self.statement.is_update or self.statement.is_delete:
+            adapter = _DMLUpdateDeleteReturningColFilter(
+                target_mapper, dml_mapper
+            )
+        else:
+            adapter = None
 
         if self.compile_options._is_star and (len(self._entities) != 1):
             raise sa_exc.CompileError(
@@ -891,9 +944,9 @@ class FromStatement(GroupedElement, Generative, TypedReturnsRows[Unpack[_Ts]]):
 
     __visit_name__ = "orm_from_statement"
 
-    _compile_options = ORMFromStatementCompileState.default_compile_options
+    _compile_options = _ORMFromStatementCompileState.default_compile_options
 
-    _compile_state_factory = ORMFromStatementCompileState.create_for_statement
+    _compile_state_factory = _ORMFromStatementCompileState.create_for_statement
 
     _for_update_arg = None
 
@@ -969,7 +1022,7 @@ class FromStatement(GroupedElement, Generative, TypedReturnsRows[Unpack[_Ts]]):
 
         """
         meth = cast(
-            ORMSelectCompileState, SelectState.get_plugin_class(self)
+            _ORMSelectCompileState, SelectState.get_plugin_class(self)
         ).get_column_descriptions
         return meth(self)
 
@@ -1000,14 +1053,14 @@ class FromStatement(GroupedElement, Generative, TypedReturnsRows[Unpack[_Ts]]):
 
 
 @sql.base.CompileState.plugin_for("orm", "compound_select")
-class CompoundSelectCompileState(
-    AutoflushOnlyORMCompileState, CompoundSelectState
+class _CompoundSelectCompileState(
+    _AutoflushOnlyORMCompileState, CompoundSelectState
 ):
     pass
 
 
 @sql.base.CompileState.plugin_for("orm", "select")
-class ORMSelectCompileState(ORMCompileState, SelectState):
+class _ORMSelectCompileState(_ORMCompileState, SelectState):
     _already_joined_edges = ()
 
     _memoized_entities = _EMPTY_DICT
@@ -1031,7 +1084,7 @@ class ORMSelectCompileState(ORMCompileState, SelectState):
         statement: Union[Select, FromStatement],
         compiler: Optional[SQLCompiler],
         **kw: Any,
-    ) -> ORMSelectCompileState:
+    ) -> _ORMSelectCompileState:
         """compiler hook, we arrive here from compiler.visit_select() only."""
 
         self = cls.__new__(cls)
@@ -1579,10 +1632,10 @@ class ORMSelectCompileState(ORMCompileState, SelectState):
         )
         statement._label_style = self.label_style
 
-        # Oracle however does not allow FOR UPDATE on the subquery,
-        # and the Oracle dialect ignores it, plus for PostgreSQL, MySQL
-        # we expect that all elements of the row are locked, so also put it
-        # on the outside (except in the case of PG when OF is used)
+        # Oracle Database however does not allow FOR UPDATE on the subquery,
+        # and the Oracle Database dialects ignore it, plus for PostgreSQL,
+        # MySQL we expect that all elements of the row are locked, so also put
+        # it on the outside (except in the case of PG when OF is used)
         if (
             self._for_update_arg is not None
             and self._for_update_arg.of is None
@@ -2442,11 +2495,11 @@ class ORMSelectCompileState(ORMCompileState, SelectState):
 
 def _column_descriptions(
     query_or_select_stmt: Union[Query, Select, FromStatement],
-    compile_state: Optional[ORMSelectCompileState] = None,
+    compile_state: Optional[_ORMSelectCompileState] = None,
     legacy: bool = False,
 ) -> List[ORMColumnDescription]:
     if compile_state is None:
-        compile_state = ORMSelectCompileState._create_entities_collection(
+        compile_state = _ORMSelectCompileState._create_entities_collection(
             query_or_select_stmt, legacy=legacy
         )
     ctx = compile_state
@@ -2538,13 +2591,13 @@ class _QueryEntity:
     expr: Union[_InternalEntityType, ColumnElement[Any]]
     entity_zero: Optional[_InternalEntityType]
 
-    def setup_compile_state(self, compile_state: ORMCompileState) -> None:
+    def setup_compile_state(self, compile_state: _ORMCompileState) -> None:
         raise NotImplementedError()
 
     def setup_dml_returning_compile_state(
         self,
-        compile_state: ORMCompileState,
-        adapter: DMLReturningColFilter,
+        compile_state: _ORMCompileState,
+        adapter: Optional[_DMLReturningColFilter],
     ) -> None:
         raise NotImplementedError()
 
@@ -2745,8 +2798,8 @@ class _MapperEntity(_QueryEntity):
 
     def setup_dml_returning_compile_state(
         self,
-        compile_state: ORMCompileState,
-        adapter: DMLReturningColFilter,
+        compile_state: _ORMCompileState,
+        adapter: Optional[_DMLReturningColFilter],
     ) -> None:
         loading._setup_entity_query(
             compile_state,
@@ -2904,8 +2957,8 @@ class _BundleEntity(_QueryEntity):
 
     def setup_dml_returning_compile_state(
         self,
-        compile_state: ORMCompileState,
-        adapter: DMLReturningColFilter,
+        compile_state: _ORMCompileState,
+        adapter: Optional[_DMLReturningColFilter],
     ) -> None:
         return self.setup_compile_state(compile_state)
 
@@ -3094,8 +3147,8 @@ class _RawColumnEntity(_ColumnEntity):
 
     def setup_dml_returning_compile_state(
         self,
-        compile_state: ORMCompileState,
-        adapter: DMLReturningColFilter,
+        compile_state: _ORMCompileState,
+        adapter: Optional[_DMLReturningColFilter],
     ) -> None:
         return self.setup_compile_state(compile_state)
 
@@ -3211,11 +3264,14 @@ class _ORMColumnEntity(_ColumnEntity):
 
     def setup_dml_returning_compile_state(
         self,
-        compile_state: ORMCompileState,
-        adapter: DMLReturningColFilter,
+        compile_state: _ORMCompileState,
+        adapter: Optional[_DMLReturningColFilter],
     ) -> None:
-        self._fetch_column = self.column
-        column = adapter(self.column, False)
+
+        self._fetch_column = column = self.column
+        if adapter:
+            column = adapter(column, False)
+
         if column is not None:
             compile_state.dedupe_columns.add(column)
             compile_state.primary_columns.append(column)

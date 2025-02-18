@@ -13,30 +13,30 @@ on:
 
 env:
   # global env to all steps
-  TOX_WORKERS: -n2
+  TOX_WORKERS: -n4
 
 permissions:
   contents: read
 
 jobs:
   run-test:
-    name: test-${{ matrix.python-version }}-${{ matrix.build-type }}-${{ matrix.architecture }}-${{ matrix.os }}
+    name: test-${{ matrix.python-version }}-${{ matrix.os }}-${{ matrix.architecture }}-${{ matrix.build-type }}
     runs-on: ${{ matrix.os }}
     strategy:
       # run this job using this matrix, excluding some combinations below.
       matrix:
         os:
-          - "ubuntu-latest"
+          - "ubuntu-22.04"
+          - "ubuntu-22.04-arm"
           - "windows-latest"
           - "macos-latest"
           - "macos-13"
         python-version:
-          - "3.8"
           - "3.9"
           - "3.10"
           - "3.11"
           - "3.12"
-          - "3.13.0-alpha - 3.13"
+          - "3.13"
           - "pypy-3.10"
         build-type:
           - "cext"
@@ -50,16 +50,23 @@ jobs:
           # autocommit tests fail on the ci for some reason
           - python-version: "pypy-3.10"
             pytest-args: "-k 'not test_autocommit_on and not test_turn_autocommit_off_via_default_iso_level and not test_autocommit_isolation_level'"
-          - os: "ubuntu-latest"
+          - os: "ubuntu-22.04"
+            pytest-args: "--dbdriver pysqlite --dbdriver aiosqlite"
+          - os: "ubuntu-22.04-arm"
             pytest-args: "--dbdriver pysqlite --dbdriver aiosqlite"
 
 
         exclude:
           # linux do not have x86 / arm64 python
-          - os: "ubuntu-latest"
+          - os: "ubuntu-22.04"
             architecture: x86
-          - os: "ubuntu-latest"
+          - os: "ubuntu-22.04"
             architecture: arm64
+          # linux-arm do not have x86 / x64 python
+          - os: "ubuntu-22.04-arm"
+            architecture: x86
+          - os: "ubuntu-22.04-arm"
+            architecture: x64
           # windows des not have arm64 python
           - os: "windows-latest"
             architecture: arm64
@@ -69,17 +76,17 @@ jobs:
           - os: "macos-latest"
             architecture: x64
           - os: "macos-latest"
-            python-version: "3.8"
-          - os: "macos-latest"
             python-version: "3.9"
           # macos 13: uses intel macs. no arm64, x86
           - os: "macos-13"
             architecture: arm64
           - os: "macos-13"
             architecture: x86
-          # pypy does not have cext or x86
+          # pypy does not have cext or x86 or arm on linux
           - python-version: "pypy-3.10"
             build-type: "cext"
+          - os: "ubuntu-22.04-arm"
+            python-version: "pypy-3.10"
           - os: "windows-latest"
             python-version: "pypy-3.10"
             architecture: x86
@@ -113,46 +120,6 @@ jobs:
         run: tox -e github-${{ matrix.build-type }} -- -q --nomemory --notimingintensive ${{ matrix.pytest-args }}
         continue-on-error: ${{ matrix.python-version == 'pypy-3.10' }}
 
-  run-test-arm64:
-    # Hopefully something native can be used at some point https://github.blog/changelog/2023-10-30-accelerate-your-ci-cd-with-arm-based-hosted-runners-in-github-actions/
-    name: test-arm64-${{ matrix.python-version }}-${{ matrix.build-type }}-${{ matrix.os }}
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version:
-          - cp38-cp38
-          - cp39-cp39
-          - cp310-cp310
-          - cp311-cp311
-          - cp312-cp312
-          - cp313-cp313
-        build-type:
-          - "cext"
-          - "nocext"
-
-      fail-fast: false
-
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Set up emulation
-        run: |
-          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-
-      - name: Run tests
-        uses: docker://quay.io/pypa/manylinux2014_aarch64
-        with:
-          args: |
-            bash -c "
-            export PATH=/opt/python/${{ matrix.python-version }}/bin:$PATH &&
-            python --version &&
-            python -m pip install --upgrade pip &&
-            pip install --upgrade tox setuptools &&
-            pip list &&
-            tox -e github-${{ matrix.build-type }} -- -q --nomemory --notimingintensive ${{ matrix.pytest-args }}
-            "
-
   run-tox:
     name: ${{ matrix.tox-env }}-${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
@@ -160,14 +127,13 @@ jobs:
       # run this job using this matrix, excluding some combinations below.
       matrix:
         os:
-          - "ubuntu-latest"
+          - "ubuntu-22.04"
         python-version:
-          - "3.8"
           - "3.9"
           - "3.10"
           - "3.11"
           - "3.12"
-          - "3.13.0-alpha - 3.13"
+          - "3.13"
         tox-env:
           - mypy
           - pep484
@@ -176,11 +142,9 @@ jobs:
           # run lint only on 3.12
           - tox-env: lint
             python-version: "3.12"
-            os: "ubuntu-latest"
+            os: "ubuntu-22.04"
         exclude:
           # run pep484 only on 3.10+
-          - tox-env: pep484
-            python-version: "3.8"
           - tox-env: pep484
             python-version: "3.9"
 

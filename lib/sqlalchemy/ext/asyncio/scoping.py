@@ -1,5 +1,5 @@
 # ext/asyncio/scoping.py
-# Copyright (C) 2005-2024 the SQLAlchemy authors and contributors
+# Copyright (C) 2005-2025 the SQLAlchemy authors and contributors
 # <see AUTHORS file>
 #
 # This module is part of SQLAlchemy and is released under
@@ -85,6 +85,7 @@ _Ts = TypeVarTuple("_Ts")
         "commit",
         "connection",
         "delete",
+        "delete_all",
         "execute",
         "expire",
         "expire_all",
@@ -95,6 +96,7 @@ _Ts = TypeVarTuple("_Ts")
         "is_modified",
         "invalidate",
         "merge",
+        "merge_all",
         "refresh",
         "rollback",
         "scalar",
@@ -287,7 +289,7 @@ class async_scoped_session(Generic[_AS]):
 
         return await self._proxied.aclose()
 
-    def add(self, instance: object, _warn: bool = True) -> None:
+    def add(self, instance: object, *, _warn: bool = True) -> None:
         r"""Place an object into this :class:`_orm.Session`.
 
         .. container:: class_bases
@@ -368,7 +370,7 @@ class async_scoped_session(Generic[_AS]):
         object is entered::
 
             async with async_session.begin():
-                # .. ORM transaction is begun
+                ...  # ORM transaction is begun
 
         Note that database IO will not normally occur when the session-level
         transaction is begun, as database transactions begin on an
@@ -529,6 +531,23 @@ class async_scoped_session(Generic[_AS]):
         """  # noqa: E501
 
         return await self._proxied.delete(instance)
+
+    async def delete_all(self, instances: Iterable[object]) -> None:
+        r"""Calls :meth:`.AsyncSession.delete` on multiple instances.
+
+        .. container:: class_bases
+
+            Proxied for the :class:`_asyncio.AsyncSession` class on
+            behalf of the :class:`_asyncio.scoping.async_scoped_session` class.
+
+        .. seealso::
+
+            :meth:`_orm.Session.delete_all` - main documentation for delete_all
+
+
+        """  # noqa: E501
+
+        return await self._proxied.delete_all(instances)
 
     @overload
     async def execute(
@@ -812,28 +831,28 @@ class async_scoped_session(Generic[_AS]):
 
             # construct async engines w/ async drivers
             engines = {
-                'leader':create_async_engine("sqlite+aiosqlite:///leader.db"),
-                'other':create_async_engine("sqlite+aiosqlite:///other.db"),
-                'follower1':create_async_engine("sqlite+aiosqlite:///follower1.db"),
-                'follower2':create_async_engine("sqlite+aiosqlite:///follower2.db"),
+                "leader": create_async_engine("sqlite+aiosqlite:///leader.db"),
+                "other": create_async_engine("sqlite+aiosqlite:///other.db"),
+                "follower1": create_async_engine("sqlite+aiosqlite:///follower1.db"),
+                "follower2": create_async_engine("sqlite+aiosqlite:///follower2.db"),
             }
+
 
             class RoutingSession(Session):
                 def get_bind(self, mapper=None, clause=None, **kw):
                     # within get_bind(), return sync engines
                     if mapper and issubclass(mapper.class_, MyOtherClass):
-                        return engines['other'].sync_engine
+                        return engines["other"].sync_engine
                     elif self._flushing or isinstance(clause, (Update, Delete)):
-                        return engines['leader'].sync_engine
+                        return engines["leader"].sync_engine
                     else:
                         return engines[
-                            random.choice(['follower1','follower2'])
+                            random.choice(["follower1", "follower2"])
                         ].sync_engine
 
+
             # apply to AsyncSession using sync_session_class
-            AsyncSessionMaker = async_sessionmaker(
-                sync_session_class=RoutingSession
-            )
+            AsyncSessionMaker = async_sessionmaker(sync_session_class=RoutingSession)
 
         The :meth:`_orm.Session.get_bind` method is called in a non-asyncio,
         implicitly non-blocking context in the same manner as ORM event hooks
@@ -957,6 +976,31 @@ class async_scoped_session(Generic[_AS]):
         """  # noqa: E501
 
         return await self._proxied.merge(instance, load=load, options=options)
+
+    async def merge_all(
+        self,
+        instances: Iterable[_O],
+        *,
+        load: bool = True,
+        options: Optional[Sequence[ORMOption]] = None,
+    ) -> Sequence[_O]:
+        r"""Calls :meth:`.AsyncSession.merge` on multiple instances.
+
+        .. container:: class_bases
+
+            Proxied for the :class:`_asyncio.AsyncSession` class on
+            behalf of the :class:`_asyncio.scoping.async_scoped_session` class.
+
+        .. seealso::
+
+            :meth:`_orm.Session.merge_all` - main documentation for merge_all
+
+
+        """  # noqa: E501
+
+        return await self._proxied.merge_all(
+            instances, load=load, options=options
+        )
 
     async def refresh(
         self,

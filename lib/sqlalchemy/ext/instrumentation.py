@@ -1,5 +1,5 @@
 # ext/instrumentation.py
-# Copyright (C) 2005-2024 the SQLAlchemy authors and contributors
+# Copyright (C) 2005-2025 the SQLAlchemy authors and contributors
 # <see AUTHORS file>
 #
 # This module is part of SQLAlchemy and is released under
@@ -275,7 +275,7 @@ class InstrumentationManager:
         delattr(class_, key)
 
     def instrument_collection_class(self, class_, key, collection_class):
-        return collections.prepare_instrumentation(collection_class)
+        return collections._prepare_instrumentation(collection_class)
 
     def get_instance_dict(self, class_, instance):
         return instance.__dict__

@@ -1,5 +1,5 @@
 # sql/_selectable_constructors.py
-# Copyright (C) 2005-2024 the SQLAlchemy authors and contributors
+# Copyright (C) 2005-2025 the SQLAlchemy authors and contributors
 # <see AUTHORS file>
 #
 # This module is part of SQLAlchemy and is released under
@@ -11,7 +11,6 @@ from typing import Any
 from typing import Optional
 from typing import overload
 from typing import TYPE_CHECKING
-from typing import TypeVar
 from typing import Union
 
 from . import coercions
@@ -48,15 +47,13 @@ if TYPE_CHECKING:
     from ._typing import _T7
     from ._typing import _T8
     from ._typing import _T9
+    from ._typing import _Ts
     from ._typing import _TypedColumnClauseArgument as _TCCA
     from .functions import Function
     from .selectable import CTE
     from .selectable import HasCTE
     from .selectable import ScalarSelect
     from .selectable import SelectBase
-
-
-_T = TypeVar("_T", bound=Any)
 
 
 def alias(
@@ -107,9 +104,28 @@ def cte(
     )
 
 
+# TODO: mypy requires the _TypedSelectable overloads in all compound select
+# constructors since _SelectStatementForCompoundArgument includes
+# untyped args that make it return CompoundSelect[Unpack[tuple[Never, ...]]]
+# pyright does not have this issue
+_TypedSelectable = Union["Select[Unpack[_Ts]]", "CompoundSelect[Unpack[_Ts]]"]
+
+
+@overload
 def except_(
-    *selects: _SelectStatementForCompoundArgument,
-) -> CompoundSelect:
+    *selects: _TypedSelectable[Unpack[_Ts]],
+) -> CompoundSelect[Unpack[_Ts]]: ...
+
+
+@overload
+def except_(
+    *selects: _SelectStatementForCompoundArgument[Unpack[_Ts]],
+) -> CompoundSelect[Unpack[_Ts]]: ...
+
+
+def except_(
+    *selects: _SelectStatementForCompoundArgument[Unpack[_Ts]],
+) -> CompoundSelect[Unpack[_Ts]]:
     r"""Return an ``EXCEPT`` of multiple selectables.
 
     The returned object is an instance of
@@ -122,9 +138,21 @@ def except_(
     return CompoundSelect._create_except(*selects)
 
 
+@overload
 def except_all(
-    *selects: _SelectStatementForCompoundArgument,
-) -> CompoundSelect:
+    *selects: _TypedSelectable[Unpack[_Ts]],
+) -> CompoundSelect[Unpack[_Ts]]: ...
+
+
+@overload
+def except_all(
+    *selects: _SelectStatementForCompoundArgument[Unpack[_Ts]],
+) -> CompoundSelect[Unpack[_Ts]]: ...
+
+
+def except_all(
+    *selects: _SelectStatementForCompoundArgument[Unpack[_Ts]],
+) -> CompoundSelect[Unpack[_Ts]]:
     r"""Return an ``EXCEPT ALL`` of multiple selectables.
 
     The returned object is an instance of
@@ -157,16 +185,16 @@ def exists(
     :meth:`_sql.SelectBase.exists` method::
 
         exists_criteria = (
-            select(table2.c.col2).
-            where(table1.c.col1 == table2.c.col2).
-            exists()
+            select(table2.c.col2).where(table1.c.col1 == table2.c.col2).exists()
         )
 
     The EXISTS criteria is then used inside of an enclosing SELECT::
 
         stmt = select(table1.c.col1).where(exists_criteria)
 
-    The above statement will then be of the form::
+    The above statement will then be of the form:
+
+    .. sourcecode:: sql
 
         SELECT col1 FROM table1 WHERE EXISTS
         (SELECT table2.col2 FROM table2 WHERE table2.col2 = table1.col1)
@@ -183,9 +211,21 @@ def exists(
     return Exists(__argument)
 
 
+@overload
 def intersect(
-    *selects: _SelectStatementForCompoundArgument,
-) -> CompoundSelect:
+    *selects: _TypedSelectable[Unpack[_Ts]],
+) -> CompoundSelect[Unpack[_Ts]]: ...
+
+
+@overload
+def intersect(
+    *selects: _SelectStatementForCompoundArgument[Unpack[_Ts]],
+) -> CompoundSelect[Unpack[_Ts]]: ...
+
+
+def intersect(
+    *selects: _SelectStatementForCompoundArgument[Unpack[_Ts]],
+) -> CompoundSelect[Unpack[_Ts]]:
     r"""Return an ``INTERSECT`` of multiple selectables.
 
     The returned object is an instance of
@@ -198,9 +238,21 @@ def intersect(
     return CompoundSelect._create_intersect(*selects)
 
 
+@overload
 def intersect_all(
-    *selects: _SelectStatementForCompoundArgument,
-) -> CompoundSelect:
+    *selects: _TypedSelectable[Unpack[_Ts]],
+) -> CompoundSelect[Unpack[_Ts]]: ...
+
+
+@overload
+def intersect_all(
+    *selects: _SelectStatementForCompoundArgument[Unpack[_Ts]],
+) -> CompoundSelect[Unpack[_Ts]]: ...
+
+
+def intersect_all(
+    *selects: _SelectStatementForCompoundArgument[Unpack[_Ts]],
+) -> CompoundSelect[Unpack[_Ts]]:
     r"""Return an ``INTERSECT ALL`` of multiple selectables.
 
     The returned object is an instance of
@@ -227,11 +279,14 @@ def join(
 
     E.g.::
 
-        j = join(user_table, address_table,
-                 user_table.c.id == address_table.c.user_id)
+        j = join(
+            user_table, address_table, user_table.c.id == address_table.c.user_id
+        )
         stmt = select(user_table).select_from(j)
 
-    would emit SQL along the lines of::
+    would emit SQL along the lines of:
+
+    .. sourcecode:: sql
 
         SELECT user.id, user.name FROM user
         JOIN address ON user.id = address.user_id
@@ -265,7 +320,7 @@ def join(
 
         :class:`_expression.Join` - the type of object produced.
 
-    """
+    """  # noqa: E501
 
     return Join(left, right, onclause, isouter, full)
 
@@ -541,13 +596,14 @@ def tablesample(
         from sqlalchemy import func
 
         selectable = people.tablesample(
-                    func.bernoulli(1),
-                    name='alias',
-                    seed=func.random())
+            func.bernoulli(1), name="alias", seed=func.random()
+        )
         stmt = select(selectable.c.people_id)
 
     Assuming ``people`` with a column ``people_id``, the above
-    statement would render as::
+    statement would render as:
+
+    .. sourcecode:: sql
 
         SELECT alias.people_id FROM
         people AS alias TABLESAMPLE bernoulli(:bernoulli_1)
@@ -565,9 +621,21 @@ def tablesample(
     return TableSample._factory(selectable, sampling, name=name, seed=seed)
 
 
+@overload
 def union(
-    *selects: _SelectStatementForCompoundArgument,
-) -> CompoundSelect:
+    *selects: _TypedSelectable[Unpack[_Ts]],
+) -> CompoundSelect[Unpack[_Ts]]: ...
+
+
+@overload
+def union(
+    *selects: _SelectStatementForCompoundArgument[Unpack[_Ts]],
+) -> CompoundSelect[Unpack[_Ts]]: ...
+
+
+def union(
+    *selects: _SelectStatementForCompoundArgument[Unpack[_Ts]],
+) -> CompoundSelect[Unpack[_Ts]]:
     r"""Return a ``UNION`` of multiple selectables.
 
     The returned object is an instance of
@@ -587,9 +655,21 @@ def union(
     return CompoundSelect._create_union(*selects)
 
 
+@overload
 def union_all(
-    *selects: _SelectStatementForCompoundArgument,
-) -> CompoundSelect:
+    *selects: _TypedSelectable[Unpack[_Ts]],
+) -> CompoundSelect[Unpack[_Ts]]: ...
+
+
+@overload
+def union_all(
+    *selects: _SelectStatementForCompoundArgument[Unpack[_Ts]],
+) -> CompoundSelect[Unpack[_Ts]]: ...
+
+
+def union_all(
+    *selects: _SelectStatementForCompoundArgument[Unpack[_Ts]],
+) -> CompoundSelect[Unpack[_Ts]]:
     r"""Return a ``UNION ALL`` of multiple selectables.
 
     The returned object is an instance of
@@ -625,12 +705,10 @@ def values(
         from sqlalchemy import values
 
         value_expr = values(
-            column('id', Integer),
-            column('name', String),
-            name="my_values"
-        ).data(
-            [(1, 'name1'), (2, 'name2'), (3, 'name3')]
-        )
+            column("id", Integer),
+            column("name", String),
+            name="my_values",
+        ).data([(1, "name1"), (2, "name2"), (3, "name3")])
 
     :param \*columns: column expressions, typically composed using
      :func:`_expression.column` objects.

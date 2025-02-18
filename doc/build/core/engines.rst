@@ -200,13 +200,23 @@ More notes on connecting to MySQL at :ref:`mysql_toplevel`.
 Oracle
 ^^^^^^^^^^
 
-The Oracle dialect uses cx_oracle as the default DBAPI::
+The preferred Oracle Database dialect uses the python-oracledb driver as the
+DBAPI::
 
-    engine = create_engine("oracle://scott:tiger@127.0.0.1:1521/sidname")
+      engine = create_engine(
+          "oracle+oracledb://scott:tiger@127.0.0.1:1521/?service_name=freepdb1"
+      )
 
-    engine = create_engine("oracle+cx_oracle://scott:tiger@tnsname")
+      engine = create_engine("oracle+oracledb://scott:tiger@tnsalias")
 
-More notes on connecting to Oracle at :ref:`oracle_toplevel`.
+For historical reasons, the Oracle dialect uses the obsolete cx_Oracle driver
+as the default DBAPI::
+
+      engine = create_engine("oracle://scott:tiger@127.0.0.1:1521/?service_name=freepdb1")
+
+      engine = create_engine("oracle+cx_oracle://scott:tiger@tnsalias")
+
+More notes on connecting to Oracle Database at :ref:`oracle_toplevel`.
 
 Microsoft SQL Server
 ^^^^^^^^^^^^^^^^^^^^
@@ -578,13 +588,16 @@ getting duplicate log lines.
 Setting the Logging Name
 -------------------------
 
-The logger name of instance such as an :class:`~sqlalchemy.engine.Engine` or
-:class:`~sqlalchemy.pool.Pool` defaults to using a truncated hex identifier
-string. To set this to a specific name, use the
+The logger name for :class:`~sqlalchemy.engine.Engine` or
+:class:`~sqlalchemy.pool.Pool` is set to be the module-qualified class name of the
+object.  This name can be further qualified with an additional name
+using the
 :paramref:`_sa.create_engine.logging_name` and
-:paramref:`_sa.create_engine.pool_logging_name`  with
-:func:`sqlalchemy.create_engine`; the name will be appended to the logging name
-``sqlalchemy.engine.Engine``::
+:paramref:`_sa.create_engine.pool_logging_name` parameters with
+:func:`sqlalchemy.create_engine`; the name will be appended to existing
+class-qualified logging name.   This use is recommended for applications that
+make use of multiple global :class:`.Engine` instances simultaenously, so
+that they may be distinguished in logging::
 
     >>> import logging
     >>> from sqlalchemy import create_engine
@@ -693,4 +706,3 @@ these parameters from being logged for privacy purposes, enable the
     ...     conn.execute(text("select :some_private_name"), {"some_private_name": "pii"})
     2020-10-24 12:48:32,808 INFO sqlalchemy.engine.Engine select ?
     2020-10-24 12:48:32,808 INFO sqlalchemy.engine.Engine [SQL parameters hidden due to hide_parameters=True]
-
